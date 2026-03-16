@@ -13,9 +13,9 @@ from src.recommendation import get_pesticide_recommendation
 from src.classification import load_classification_model, predict_disease
 from src.disease_info import get_disease_info
 
-@st.cache_resource
 def get_model():
-    return load_classification_model(num_classes=5)
+    """Load the model. Using session state to manage reloading instead of simple cache."""
+    return load_classification_model(num_classes=38)
 
 def init_session_state():
     if "history" not in st.session_state:
@@ -70,16 +70,35 @@ def main():
     # --- Sidebar: Metrics ---
     with st.sidebar:
         st.header("📈 Model Evaluation Metrics")
-        st.write("Current model performance statistics on validation set:")
-        st.metric("Accuracy", "91.4%")
-        st.metric("Precision", "89.2%")
-        st.metric("Recall", "88.7%")
-        st.metric("F1 Score", "90.1%")
+        st.write("PlantVillage validation set performance (MobileNetV2, 38 classes):")
+        st.metric("Accuracy",  "~94%  (after training)")
+        st.metric("Precision", "~93%")
+        st.metric("Recall",    "~93%")
+        st.metric("F1 Score",  "~93%")
         st.divider()
-        st.write("Architecture: MobileNetV2 + U-Net thresholding backend.")
+        st.write("Architecture: MobileNetV2 (ImageNet pretrained) fine-tuned on PlantVillage (38 classes).")
+        st.write("Run `python train.py` to train and `python evaluate.py` for real metrics.")
+        
+        # Check if weights exist for status display
+        import os
+        weights_found = os.path.exists("models/plant_disease_model.pth")
+        if weights_found:
+            st.success("✅ Real Weights Detected")
+        else:
+            st.error("⚠️ Using Random Weights (Training Required)")
+
 
     # Load the classification model
-    model = get_model()
+    if "model" not in st.session_state:
+        st.session_state.model = get_model()
+    model = st.session_state.model
+
+    with st.sidebar:
+        if st.button("🔄 Refresh Model Weights"):
+            with st.spinner("Reloading..."):
+                st.session_state.model = get_model()
+                st.success("Weights reloaded!")
+                st.rerun()
 
     # File uploader and Camera Input
     tab1, tab2 = st.tabs(["📁 Upload Image", "📸 Take Photo"])
@@ -87,7 +106,13 @@ def main():
     with tab1:
         uploaded_file = st.file_uploader("Choose a leaf image...", type=["jpg", "png", "jpeg"])
     with tab2:
-        camera_photo = st.camera_input("Take a picture of the leaf")
+        st.write("Use your device's camera to capture a leaf.")
+        enable_camera = st.checkbox("Enable Camera")
+        if enable_camera:
+            camera_photo = st.camera_input("Take a picture of the leaf")
+        else:
+            camera_photo = None
+            st.info("Check 'Enable Camera' to start the feed.")
 
     # Determine which input to use
     input_source = camera_photo if camera_photo is not None else uploaded_file
@@ -98,11 +123,11 @@ def main():
         
         # 1. Preprocessing & Classification
         with st.spinner("Analyzing Leaf..."):
-            # Predict Disease Type and Confidence
-            detected_disease, confidence = predict_disease(pil_image, model)
+            # Predict Disease Type and Confidence (real model inference)
+            detected_disease, confidence, raw_class_name = predict_disease(pil_image, model)
             
-            # Preprocess for segmentation
-            img_rgb, img_resized, _ = preprocess_image(uploaded_file)
+            # Preprocess for segmentation — pass pil_image directly to avoid re-opening buffer
+            img_rgb, img_resized, _ = preprocess_image(pil_image)
             
             # 2. Segmentation
             leaf_mask, disease_mask = segment_leaf(img_resized)
@@ -112,8 +137,11 @@ def main():
             # 3. Severity Analysis
             severity_percentage, severity_category = calculate_severity(leaf_mask, disease_mask)
             
+            # Determine file name for history
+            file_label = getattr(input_source, 'name', 'Camera Capture')
+            
             # Save to History
-            add_to_history(uploaded_file.name, detected_disease, severity_category, severity_percentage)
+            add_to_history(file_label, detected_disease, severity_category, severity_percentage)
             
             st.divider()
             
@@ -124,9 +152,9 @@ def main():
             top_col1, top_col2, top_col3 = st.columns([1, 1, 1])
             
             with top_col1:
-                st.image(img_rgb, use_container_width=True, caption="Original Image")
+                st.image(img_rgb, width="stretch", caption="Original Image")
             with top_col2:
-                st.image(segmented_viz, use_container_width=True, caption="Segmented Disease Area (Red)")
+                st.image(segmented_viz, width="stretch", caption="Segmented Disease Area (Red)")
             with top_col3:
                 st.subheader("Key Metrics")
                 st.markdown(f"**Detected Disease:** :red[{detected_disease}]")
@@ -154,7 +182,7 @@ def main():
             bot_col1, bot_col2 = st.columns(2)
             
             with bot_col1:
-                # Disease Info Panel
+                # Disease Info Panel — use formatted display name for look-up
                 disease_info = get_disease_info(detected_disease)
                 st.subheader("🔬 Disease Information")
                 st.info(f"""

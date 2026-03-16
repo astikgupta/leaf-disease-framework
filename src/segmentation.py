@@ -19,9 +19,9 @@ def segment_leaf(image_rgb):
     # Most PlantVillage backgrounds are light gray/white/black.
     # We look for green, yellow, brown, and dark spots (typical of leaves and disease).
     
-    # Lower bound: Hue 20 (brown/yellowish), Sat 30, Val 30
-    # Upper bound: Hue 90 (green), Sat 255, Val 255
-    lower_leaf = np.array([20, 25, 25])
+    # Lower bound: Hue 10 (browns), Sat 20, Val 15 (very dark spots)
+    # Upper bound: Hue 100 (greens), Sat 255, Val 255
+    lower_leaf = np.array([10, 20, 15])
     upper_leaf = np.array([100, 255, 255])
     
     leaf_mask = cv2.inRange(hsv, lower_leaf, upper_leaf)
@@ -40,20 +40,25 @@ def segment_leaf(image_rgb):
         leaf_mask[labels == largest_label] = 255
         
     # 2. Segment the Diseased Area
-    # Diseased areas are typically yellow, brown, or black spots on the green leaf.
-    # Therefore, we can find healthy green areas, and subtract them from the total leaf.
+    # Strategy: Healthy green removal + explicitly finding dark brown/black spots
     
-    # Define "healthy green" range
+    # A. Healthy green range
     lower_green = np.array([35, 40, 40])
     upper_green = np.array([85, 255, 255])
-    
     healthy_mask = cv2.inRange(hsv, lower_green, upper_green)
     
-    # The diseased area is the part of the leaf that is NOT healthy green
-    disease_mask = cv2.bitwise_and(leaf_mask, cv2.bitwise_not(healthy_mask))
+    # B. Explicitly find DARK SPOTS (brown/black)
+    # Low saturation and low-medium value
+    lower_dark = np.array([0, 0, 0])
+    upper_dark = np.array([180, 255, 70]) # Catching low brightness spots
+    dark_mask = cv2.inRange(hsv, lower_dark, upper_dark)
+    dark_mask = cv2.bitwise_and(dark_mask, leaf_mask)
     
-    # Optional: Clean up tiny noise in the disease mask
-    kernel_small = np.ones((3,3), np.uint8)
-    disease_mask = cv2.morphologyEx(disease_mask, cv2.MORPH_OPEN, kernel_small)
+    # C. Combine: (Everything on leaf that isn't green) OR (explicit dark spots)
+    non_green = cv2.bitwise_and(leaf_mask, cv2.bitwise_not(healthy_mask))
+    disease_mask = cv2.bitwise_or(non_green, dark_mask)
+    
+    # Final clean up
+    disease_mask = cv2.morphologyEx(disease_mask, cv2.MORPH_OPEN, np.ones((3,3), np.uint8))
     
     return leaf_mask, disease_mask

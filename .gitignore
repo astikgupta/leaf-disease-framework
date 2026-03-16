@@ -19,4 +19,6 @@ venv.bak/
 dist/
 build/
 eggs/
-.eggs/
+# Data and Models
+data/
+# models/  <- keeping models as they are small (9MB)

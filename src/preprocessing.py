@@ -14,8 +14,11 @@ def preprocess_image(image_path_or_file, target_size=(256, 256)):
         if img_bgr is None:
             raise ValueError(f"Could not load image at {image_path_or_file}")
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    elif isinstance(image_path_or_file, Image.Image):
+        # Handle already opened PIL Image (prevents cursor reset issues)
+        img_rgb = np.array(image_path_or_file.convert('RGB'))
     else:
-        # Assume it's a file-like object (PIL Image)
+        # Assume it's a file-like object (buffer)
         img_pil = Image.open(image_path_or_file).convert('RGB')
         img_rgb = np.array(img_pil)
 
