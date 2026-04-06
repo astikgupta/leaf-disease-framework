@@ -208,7 +208,7 @@ def main():
 
     # --- History Section ---
     st.divider()
-    st.header("🕰️ Disease History Tracking")
+    st.header("🕰️ Diseasee History Tracking")
     if st.session_state.history:
         # Convert history dicts into a pandas dataframe for clean display
         history_df = pd.DataFrame(st.session_state.history)
